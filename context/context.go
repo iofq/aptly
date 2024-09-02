@@ -13,6 +13,7 @@ import (
 	"runtime/pprof"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/aptly-dev/aptly/aptly"
@@ -558,7 +559,7 @@ func (context *AptlyContext) GoContextHandleSignals() {
 
 	// Catch ^C
 	sigch := make(chan os.Signal, 1)
-	signal.Notify(sigch, os.Interrupt)
+	signal.Notify(sigch, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	var cancel gocontext.CancelFunc
 

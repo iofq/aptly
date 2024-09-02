@@ -91,18 +91,24 @@ func aptlyMirrorUpdate(cmd *commander.Command, args []string) error {
 	context.Progress().Printf("Building download queue...\n")
 	queue, downloadSize, err = repo.BuildDownloadQueue(context.PackagePool(), collectionFactory.PackageCollection(),
 		collectionFactory.ChecksumCollection(nil), skipExistingPackages)
-
 	if err != nil {
 		return fmt.Errorf("unable to update: %s", err)
 	}
 
-	defer func() {
+	cleanupDB := func() {
 		// on any interruption, unlock the mirror
 		err = context.ReOpenDatabase()
 		if err == nil {
 			repo.MarkAsIdle()
 			collectionFactory.RemoteRepoCollection().Update(repo)
 		}
+	}
+	defer cleanupDB()
+
+	context.GoContextHandleSignals()
+	go func() {
+		<-context.Done()
+		cleanupDB()
 	}()
 
 	repo.MarkAsUpdating()
@@ -115,8 +121,6 @@ func aptlyMirrorUpdate(cmd *commander.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("unable to update: %s", err)
 	}
-
-	context.GoContextHandleSignals()
 
 	count := len(queue)
 	context.Progress().Printf("Download queue: %d items (%s)\n", count, utils.HumanBytes(downloadSize))

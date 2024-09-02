@@ -393,13 +393,20 @@ func apiMirrorsUpdate(c *gin.Context) {
 			return &task.ProcessReturnValue{Code: http.StatusInternalServerError, Value: nil}, fmt.Errorf("unable to update: %s", err)
 		}
 
-		defer func() {
+		cleanupDB := func() {
 			// on any interruption, unlock the mirror
-			e := context.ReOpenDatabase()
-			if e == nil {
+			err := context.ReOpenDatabase()
+			if err == nil {
 				remote.MarkAsIdle()
 				collection.Update(remote)
 			}
+		}
+		defer cleanupDB()
+
+		context.GoContextHandleSignals()
+		go func() {
+			<-context.Done()
+			cleanupDB()
 		}()
 
 		remote.MarkAsUpdating()
@@ -407,8 +414,6 @@ func apiMirrorsUpdate(c *gin.Context) {
 		if err != nil {
 			return &task.ProcessReturnValue{Code: http.StatusInternalServerError, Value: nil}, fmt.Errorf("unable to update: %s", err)
 		}
-
-		context.GoContextHandleSignals()
 
 		count := len(queue)
 		taskDetail := struct {

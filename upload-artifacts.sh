@@ -60,6 +60,25 @@ cleanup() {
 }
 trap cleanup EXIT
 
+update_publish() {
+    _publish=$1
+    _dist=$2
+    jsonret=`curl -fsS -X PUT -H 'Content-Type: application/json' --data \
+        '{"AcquireByHash": true, "MultiDist": true,
+          "Signing": {"Batch": true, "Keyring": "aptly.repo/aptly.pub", "secretKeyring": "aptly.repo/aptly.sec", "PassphraseFile": "aptly.repo/passphrase"}}' \
+        -u $aptly_user:$aptly_password ${aptly_api}/api/publish/$_publish/$_dist?_async=true`
+    _task_id=`echo $jsonret | jq .ID`
+    for t in `seq 180`
+    do
+        jsonret=`curl -fsS -u $aptly_user:$aptly_password ${aptly_api}/api/tasks/$_task_id`
+        _state=`echo $jsonret | jq .State`
+        if [ "$_state" = "2" ]; then
+            break
+        fi
+        sleep 1
+    done
+}
+
 if [ "$action" = "ci" ]; then
     if echo "$version" | grep -vq "+"; then
        # skip ci when on release tag
@@ -81,52 +100,29 @@ curl -fsS -X POST -u $aptly_user:$aptly_password ${aptly_api}/api/repos/$aptly_r
 echo
 
 echo "\nUpdating published repo $aptly_published ..."
-curl -fsS -X PUT -H 'Content-Type: application/json' --data \
-    '{"AcquireByHash": true, "MultiDist": true,
-      "Signing": {"Batch": true, "Keyring": "aptly.repo/aptly.pub", "secretKeyring": "aptly.repo/aptly.sec", "PassphraseFile": "aptly.repo/passphrase"}}' \
-    -u $aptly_user:$aptly_password ${aptly_api}/api/publish/$aptly_published/$dist
+update_publish $aptly_published $dist
 echo
 
-if [ $dist = "focal" ]; then
-    echo "\nUpdating legacy nightly repo..."
-
-    aptly_repository=aptly-nightly
-    aptly_published=s3:repo.aptly.info:./nightly
-
-    upload
-
-    echo "\nAdding packages to $aptly_repository ..."
-    curl -fsS -X POST -u $aptly_user:$aptly_password ${aptly_api}/api/repos/$aptly_repository/file/$folder
-    echo
-
-    echo "\nUpdating published repo $aptly_published ..."
-    curl -fsS -X PUT -H 'Content-Type: application/json' --data \
-        '{"AcquireByHash": true, "Signing": {"Batch": true, "Keyring": "aptly.repo/aptly.pub",
-                                             "secretKeyring": "aptly.repo/aptly.sec", "PassphraseFile": "aptly.repo/passphrase"}}' \
-        -u $aptly_user:$aptly_password ${aptly_api}/api/publish/$aptly_published
-    echo
-fi
-
-if [ "$action" = "OBSOLETErelease" ]; then
-    aptly_repository=aptly-release
-    aptly_snapshot=aptly-$version
-    aptly_published=s3:repo.aptly.info:./squeeze
-
-    echo "\nAdding packages to $aptly_repository..."
-    curl -fsS -X POST -u $aptly_user:$aptly_password ${aptly_api}/api/repos/$aptly_repository/file/$folder
-    echo
-
-    echo "\nCreating snapshot $aptly_snapshot from repo $aptly_repository..."
-    curl -fsS -X POST -u $aptly_user:$aptly_password -H 'Content-Type: application/json' --data \
-        "{\"Name\":\"$aptly_snapshot\"}" ${aptly_api}/api/repos/$aptly_repository/snapshots
-    echo
-
-    echo "\nSwitching published repo $aptly_published to use snapshot $aptly_snapshot..."
-    curl -fsS -X PUT -H 'Content-Type: application/json' --data \
-        "{\"AcquireByHash\": true, \"Snapshots\": [{\"Component\": \"main\", \"Name\": \"$aptly_snapshot\"}],
-                                   \"Signing\": {\"Batch\": true, \"Keyring\": \"aptly.repo/aptly.pub\",
-                                                 \"secretKeyring\": \"aptly.repo/aptly.sec\", \"PassphraseFile\": \"aptly.repo/passphrase\"}}" \
-        -u $aptly_user:$aptly_password ${aptly_api}/api/publish/$aptly_published
-    echo
-fi
+# if [ "$action" = "OBSOLETErelease" ]; then
+#     aptly_repository=aptly-release
+#     aptly_snapshot=aptly-$version
+#     aptly_published=s3:repo.aptly.info:./squeeze
+#
+#     echo "\nAdding packages to $aptly_repository..."
+#     curl -fsS -X POST -u $aptly_user:$aptly_password ${aptly_api}/api/repos/$aptly_repository/file/$folder
+#     echo
+#
+#     echo "\nCreating snapshot $aptly_snapshot from repo $aptly_repository..."
+#     curl -fsS -X POST -u $aptly_user:$aptly_password -H 'Content-Type: application/json' --data \
+#         "{\"Name\":\"$aptly_snapshot\"}" ${aptly_api}/api/repos/$aptly_repository/snapshots
+#     echo
+#
+#     echo "\nSwitching published repo $aptly_published to use snapshot $aptly_snapshot..."
+#     curl -fsS -X PUT -H 'Content-Type: application/json' --data \
+#         "{\"AcquireByHash\": true, \"Snapshots\": [{\"Component\": \"main\", \"Name\": \"$aptly_snapshot\"}],
+#                                    \"Signing\": {\"Batch\": true, \"Keyring\": \"aptly.repo/aptly.pub\",
+#                                                  \"secretKeyring\": \"aptly.repo/aptly.sec\", \"PassphraseFile\": \"aptly.repo/passphrase\"}}" \
+#         -u $aptly_user:$aptly_password ${aptly_api}/api/publish/$aptly_published
+#     echo
+# fi
 

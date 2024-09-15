@@ -58,7 +58,7 @@ docker-test: ## Run system tests
 	@echo Building aptly.test ...
 	@rm -f aptly.test
 	go generate
-	go test -v -coverpkg="./..." -c -tags testruncli
+	# go test -v -coverpkg="./..." -c -tags testruncli
 	@echo Running python tests ...
 	@test -e aws.creds && . ./aws.creds; \
 	export PATH=$(BINPATH)/:$(PATH); \

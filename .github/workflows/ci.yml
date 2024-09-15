@@ -228,7 +228,7 @@ jobs:
           path="aptly_${{ github.ref_name }}_${{ matrix.goos }}_${{ matrix.goarch }}"
           mv tmp "$path"
           ls -R "$path"
-          zip -r "$path" . -i "$path/**"
+          zip -r ${path@Q} . -i ${path@Q}/**
 
       - uses: actions/upload-artifact@v4
         with:

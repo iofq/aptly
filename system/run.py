@@ -11,6 +11,7 @@ from tempfile import mkdtemp
 import traceback
 import random
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 
 from lib import BaseTest
 from s3_lib import S3Test
@@ -29,6 +30,107 @@ except ImportError:
 
 PYTHON_MINIMUM_VERSION = (3, 9)
 
+class Suite():
+
+    def __init__(self, suite, filters, include_long_tests=False, coverage_dir=None, capture_results=None):
+        self.suite = suite
+        self.orig_stdout = sys.stdout
+        self.orig_stderr = sys.stderr
+        self.testout = TestOut()
+        sys.stdout = self.testout
+        sys.stderr = self.testout
+        self.lastBase = None
+        self.numTests = 0
+        self.numFailed = 0
+        self.numSkipped = 0
+        self.fails = []
+
+        self.tests = []
+        self.testignore = []
+        for fname in sorted(glob.glob(self.suite + "/*.py"), key=natural_key):
+            fname = os.path.splitext(os.path.basename(fname))[0]
+            try:
+                module = importlib.import_module(suite + "." + fname)
+            except Exception as exc:
+                self.orig_stdout.write(f"error importing: {suite + '.' + fname}: {exc}\n")
+                continue
+
+            if hasattr(module, "TEST_IGNORE"):
+                self.testignore = module.TEST_IGNORE
+            runnables = []
+            for name in sorted(dir(module), key=natural_key):
+                if name in self.testignore:
+                    continue
+                self.testout.clear()
+
+                o = getattr(module, name)
+
+                if not (inspect.isclass(o) and issubclass(o, BaseTest) and o is not BaseTest and
+                        o is not SwiftTest and o is not S3Test and o is not AzureTest and
+                        o is not APITest and o is not FileSystemEndpointTest):
+                    continue
+
+                newBase = o.__bases__[0]
+                if self.lastBase is not None and self.lastBase is not newBase:
+                    self.lastBase.shutdown_class()
+
+                self.lastBase = newBase
+
+                if filters:
+                    matches = False
+
+                    for filt in filters:
+                        if fnmatch.fnmatch(o.__name__, filt):
+                            matches = True
+                            break
+
+                    if not matches:
+                        continue
+
+                t = o()
+
+                if t.longTest and not self.include_long_tests or not t.fixture_available() or t.skipTest:
+                    self.numSkipped += 1
+                    msg = 'SKIP'
+                    if t.skipTest and t.skipTest is not True:
+                        # If we have a reason to skip, print it
+                        msg += ': ' + t.skipTest
+                    self.orig_stdout.write("%s: %s ... " % (self.suite, colored(o.__name__, color="yellow", attrs=["bold"])))
+                    self.orig_stdout.write(colored(msg + "\n", color="yellow"))
+                    self.orig_stdout.flush()
+                    continue
+                self.numTests += 1
+
+                t.captureResults = capture_results
+                t.coverage_dir = coverage_dir
+                t.name = o.__name__
+                self.tests.append(t)
+
+    def run(self):
+        with ThreadPoolExecutor(max_workers=4) as exe:
+            exe.map(self.run_test, self.tests)
+        if self.lastBase is not None:
+            self.lastBase.shutdown_class()
+
+    def run_test(self, t=None, name=None):
+        try:
+            t.test()
+        except Exception as e:
+            self.orig_stdout.write(e)
+            self.orig_stdout.flush()
+            self.numFailed += 1
+            typ, val, tb = sys.exc_info()
+            self.fails.append((self.suite, t, typ, val, tb, testModule))
+            msg = colored("\b\b\b\bFAIL\n", color="red", attrs=["bold"])
+            msg += self.testout.get_contents()
+            traceback.print_exception(typ, val, tb, file=self.orig_stdout)
+        else:
+            msg = colored("\b\b\b\bOK \n", color="green", attrs=["bold"])
+
+        self.orig_stdout.write("%s: %s ... " % (self.suite, colored(t.name, color="yellow", attrs=["bold"])))
+        self.orig_stdout.write(msg)
+        self.orig_stdout.flush()
+        t.shutdown()
 
 def natural_key(string_):
     """See https://blog.codinghorror.com/sorting-for-humans-natural-sort-order/"""
@@ -43,103 +145,21 @@ def run(include_long_tests=False, capture_results=False, tests=None, filters=Non
 
     if not tests:
         tests = sorted(glob.glob("t*_*"), key=natural_key)
-    fails = []
-    numTests = numFailed = numSkipped = 0
-    lastBase = None
     if not coverage_dir:
         coverage_dir = mkdtemp(suffix="aptly-coverage")
 
     for test in tests:
-        orig_stdout = sys.stdout
-        orig_stderr = sys.stderr
+        try:
+            orig_stdout = sys.stdout
+            s = Suite(test, filters, include_long_tests, coverage_dir, capture_results)
+            s.run()
+        except Exception as e:
+            sys.stdout = orig_stdout
+            print(e)
+            traceback.print_exception(e)
+        finally:
+            sys.stdout = orig_stdout
 
-        # importlib.import_module(test)
-        for fname in sorted(glob.glob(test + "/*.py"), key=natural_key):
-            fname = os.path.splitext(os.path.basename(fname))[0]
-            if fname == "__init__":
-                continue
-
-            testout = TestOut()
-            sys.stdout = testout
-            sys.stderr = testout
-
-            try:
-                testModule = importlib.import_module(test + "." + fname)
-            except Exception as exc:
-                orig_stdout.write(f"error importing: {test + '.' + fname}: {exc}\n")
-                continue
-
-            testignore = []
-            if hasattr(testModule, "TEST_IGNORE"):
-                testignore = testModule.TEST_IGNORE
-            for name in sorted(dir(testModule), key=natural_key):
-                if name in testignore:
-                    continue
-
-                testout.clear()
-
-                o = getattr(testModule, name)
-
-                if not (inspect.isclass(o) and issubclass(o, BaseTest) and o is not BaseTest and
-                        o is not SwiftTest and o is not S3Test and o is not AzureTest and
-                        o is not APITest and o is not FileSystemEndpointTest):
-                    continue
-
-                newBase = o.__bases__[0]
-                if lastBase is not None and lastBase is not newBase:
-                    lastBase.shutdown_class()
-
-                lastBase = newBase
-
-                if filters:
-                    matches = False
-
-                    for filt in filters:
-                        if fnmatch.fnmatch(o.__name__, filt):
-                            matches = True
-                            break
-
-                    if not matches:
-                        continue
-
-                orig_stdout.write("%s: %s ... " % (test, colored(o.__name__, color="yellow", attrs=["bold"])))
-                orig_stdout.flush()
-
-                t = o()
-
-                if t.longTest and not include_long_tests or not t.fixture_available() or t.skipTest:
-                    numSkipped += 1
-                    msg = 'SKIP'
-                    if t.skipTest and t.skipTest is not True:
-                        # If we have a reason to skip, print it
-                        msg += ': ' + t.skipTest
-                    orig_stdout.write(colored(msg + "\n", color="yellow"))
-                    continue
-
-                numTests += 1
-
-                try:
-                    t.captureResults = capture_results
-                    t.coverage_dir = coverage_dir
-                    t.test()
-                except Exception:
-                    numFailed += 1
-                    typ, val, tb = sys.exc_info()
-                    fails.append((test, t, typ, val, tb, testModule))
-                    orig_stdout.write(colored("\b\b\b\bFAIL\n", color="red", attrs=["bold"]))
-
-                    orig_stdout.write(testout.get_contents())
-                    traceback.print_exception(typ, val, tb, file=orig_stdout)
-                else:
-                    orig_stdout.write(colored("\b\b\b\bOK \n", color="green", attrs=["bold"]))
-
-                t.shutdown()
-
-        sys.stdout = orig_stdout
-        sys.stderr = orig_stderr
-
-    if lastBase is not None:
-        lastBase.shutdown_class()
 
     print("\nCOVERAGE_RESULTS: %s" % coverage_dir)
 

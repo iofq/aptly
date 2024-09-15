@@ -225,7 +225,7 @@ jobs:
           cp completion.d/aptly tmp/completion/bash_completion.d/
           cp completion.d/_aptly tmp/completion/zsh/vendor-completions/
           gzip tmp/man/aptly.1
-          path="aptly_${{ github.ref_name }}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          path=aptly_${{ github.ref_name }}_${{ matrix.goos }}_${{ matrix.goarch }}
           mv tmp "$path"
           ls -R "$path"
           zip -r ${path@Q} . -i ${path@Q}/**

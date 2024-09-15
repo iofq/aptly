@@ -31,11 +31,6 @@ jobs:
       GOVER: '1.19'
 
     steps:
-      - name: "Install packages"
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends graphviz gnupg2 gpgv2 git gcc make devscripts
-
       - name: "Checkout repository"
         uses: actions/checkout@v3
         with:
@@ -47,14 +42,20 @@ jobs:
         with:
           go-version: ${{ env.GOVER }}
 
+      - name: "Get aptly version"
+        run: |
+           make version > VERSION
+           cat VERSION
+
       - name: Lint with golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: v1.54.1
 
-      - name: "Get aptly version"
+      - name: "Install packages"
         run: |
-           make version
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends graphviz gnupg2 gpgv2 git gcc make devscripts
 
       - name: "Setup Python"
         uses: actions/setup-python@v4

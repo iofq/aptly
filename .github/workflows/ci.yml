@@ -252,7 +252,7 @@ jobs:
         id: changelog
         uses: mikepenz/release-changelog-builder-action@v5
         env:
-          GITHUB_TOKEN ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Release
         uses: softprops/action-gh-release@v2

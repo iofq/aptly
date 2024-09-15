@@ -9,4 +9,4 @@ if [ ! -e /tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz ]; then
 fi
 
 mkdir /srv/etcd
-tar xf /tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz -C /srv/etcd --strip-components=1
+tar xf /tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz -C /srv/etcd --strip-components=1 --no-same-owner

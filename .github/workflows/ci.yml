@@ -250,7 +250,7 @@ jobs:
 
       - name: Create Changelog
         id: changelog
-        uses: mikepens/release-changelog-builder-action@v5
+        uses: mikepenz/release-changelog-builder-action@v5
         env:
           GITHUB_TOKEN ${{ secrets.GITHUB_TOKEN }}
 

@@ -30,11 +30,6 @@ jobs:
       GOPROXY: "https://proxy.golang.org"
 
     steps:
-      - name: "Install packages"
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends graphviz gnupg2 gpgv2 git gcc make devscripts
-
       - name: "Checkout repository"
         uses: actions/checkout@v3
         with:
@@ -51,14 +46,20 @@ jobs:
         with:
           go-version: ${{ steps.goversion.outputs.GOVER }}
 
+      - name: "Get aptly version"
+        run: |
+           make version > VERSION
+           cat VERSION
+
       - name: Lint with golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: v1.54.1
 
-      - name: "Get aptly version"
+      - name: "Install packages"
         run: |
-           make version
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends graphviz gnupg2 gpgv2 git gcc make devscripts
 
       - name: "Setup Python"
         uses: actions/setup-python@v4
@@ -103,15 +104,9 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.txt
 
-<<<<<<< HEAD
-  ci-debian:
-    name: "CI Build"
-    needs: build
-=======
   ci-debian-build:
     name: "CI Build (Deb)"
     needs: test
->>>>>>> ad4ffa51 (use multiarch CI build for release)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -197,9 +192,10 @@ jobs:
           ./upload-artifacts.sh release ${{ matrix.suite }}
 
   ci-release-build:
-    name: "CI Build (Binary)"
+    name: "CI Build (Binary Release)"
     needs: test
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
     strategy:
       matrix:
         goos: [linux, freebsd, darwin]
@@ -230,6 +226,7 @@ jobs:
         env:
           GOBIN: /usr/local/bin
         run: |
+          set -ex
           mkdir -p tmp/man tmp/completion/bash_completion.d tmp/completion/zsh/vendor-completions
           go version
           echo ${{ github.ref_name }} > VERSION
@@ -238,9 +235,11 @@ jobs:
           cp completion.d/aptly tmp/completion/bash_completion.d/
           cp completion.d/_aptly tmp/completion/zsh/vendor-completions/
           gzip tmp/man/aptly.1
-          path="aptly_${{ github.ref_name }}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          path=aptly_${{ github.ref_name }}_${{ matrix.goos }}_${{ matrix.goarch }}
           mv tmp "$path"
-          zip -r "$path" . -i "$path/*"
+          ls -R "$path"
+          zip -r aptly . -i "${path}/**"
+          mv aptly.zip "${path}.zip"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -258,7 +257,15 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: out/
+
+      - name: Create Changelog
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           files: "out/**/aptly_*.zip"
+          body: ${{ steps.changelog.outputs.changelog }}

@@ -13,10 +13,11 @@ RUN cd /var/lib/aptly; git clone https://github.com/aptly-dev/aptly-fixture-db.g
 RUN cd /var/lib/aptly; git clone https://github.com/aptly-dev/aptly-fixture-pool.git
 RUN cd /var/lib/aptly; curl -O http://repo.aptly.info/system-tests/etcd.db
 RUN echo "aptly ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/aptly
-ADD . /src
+ADD system/t13_etcd/install-etcd.sh /src/system/t13_etcd/install-etcd.sh
+RUN /src/system/t13_etcd/install-etcd.sh
+ADD go.* /src/
 RUN chown aptly -R /src
 RUN cd /src; su aptly -c "go mod download"
-RUN /src/system/t13_etcd/install-etcd.sh
 RUN rm -rf /src
 
 CMD /app/system/run-system-tests

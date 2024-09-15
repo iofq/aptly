@@ -35,7 +35,7 @@ require (
 	github.com/ugorji/go/codec v1.2.11
 	github.com/wsxiaoys/terminal v0.0.0-20160513160801-0940f3fc43a0
 	golang.org/x/crypto v0.21.0 // indirect
-	golang.org/x/sys v0.18.0
+	golang.org/x/sys v0.25.0
 	golang.org/x/term v0.18.0
 	golang.org/x/time v0.3.0
 	google.golang.org/protobuf v1.33.0 // indirect

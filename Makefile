@@ -1,11 +1,14 @@
 GOPATH=$(shell go env GOPATH)
-VERSION=$(shell make version)
+VERSION=$(shell make -s version)
 PYTHON?=python3
 TESTS?=
 BINPATH?=$(GOPATH)/bin
 RUN_LONG_TESTS?=yes
 GOLANGCI_LINT_VERSION=v1.54.1  # version supporting go 1.19
 COVERAGE_DIR?=$(shell mktemp -d)
+GOOS=$(shell go env GOHOSTOS)
+GOARCH=$(shell go env GOHOSTARCH)
+RELEASE=no
 # Uncomment to update test outputs
 # CAPTURE := "--capture"
 
@@ -88,7 +91,7 @@ man:  ## Create man pages
 
 version:  ## Print aptly version
 	@ts=`TZ=UTC git show -s --format='%cd.%h' --date=format-local:'%Y%m%d%H%M%S'`; \
-	if which dpkg-parsechangelog > /dev/null 2>&1; then \
+	if which dpkg-parsechangelog > /dev/null 2>&1 && [ $(RELEASE) != "yes"]; then \
 		if [ -z "$$ts" ]; then \
 			dpkg-parsechangelog -S Version; \
 		else \
@@ -102,6 +105,21 @@ build:  ## Build aptly
 	go mod tidy
 	go generate
 	go build -o build/aptly
+
+release: version ## build release archive in build/ for GOOS and GOARCH
+	@mkdir -p build/tmp/man build/tmp/completion/bash_completion.d build/tmp/completion/zsh/vendor-completions
+	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o build/tmp/aptly -ldflags='-extldflags=-static'
+	@cp man/aptly.1 build/tmp/man/
+	@cp completion.d/aptly build/tmp/completion/bash_completion.d/
+	@cp completion.d/_aptly build/tmp/completion/zsh/vendor-completions/
+	@gzip -f build/tmp/man/aptly.1
+	@path="aptly_$(VERSION)_$(GOOS)_$(GOARCH)"; \
+	rm -rf "build/$$path"; \
+	mv build/tmp build/"$$path"; \
+	rm -rf build/tmp; \
+	zip -r "build/$$path".zip "build/$$path" > /dev/null \
+		&& echo "Built build/$${path}.zip"; \
+	rm -rf "build/$$path"
 
 docker-image:  ## Build aptly-dev docker image
 	@docker build -f system/Dockerfile . -t aptly-dev
@@ -123,6 +141,9 @@ docker-system-tests:  ## Run system tests in docker container (add TEST=t04_mirr
 
 docker-lint:  ## Run golangci-lint in docker container
 	@docker run -it --rm -v ${PWD}:/app -e GOLANGCI_LINT_VERSION=$(GOLANGCI_LINT_VERSION) aptly-dev /app/system/run-golangci-lint
+
+docker-release:
+	@docker run -it --rm -v ${PWD}:/app aptly-dev /app/system/run-release
 
 flake8:  ## run flake8 on system tests
 	flake8 system

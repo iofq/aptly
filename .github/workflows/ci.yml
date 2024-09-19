@@ -53,7 +53,9 @@ jobs:
 
       - name: "Get aptly version"
         run: |
-           make version
+           make version > VERSION
+           echo "VERSION=$(cat VERSION)"> $GITHUB_OUTPUT
+        id: aptlyversion
 
       - name: "Setup Python"
         uses: actions/setup-python@v4
@@ -219,23 +221,13 @@ jobs:
         env:
           GOBIN: /usr/local/bin
         run: |
-          mkdir -p tmp/man tmp/completion/bash_completion.d tmp/completion/zsh/vendor-completions
-          go version
-          echo ${{ github.ref_name }} > VERSION
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o tmp/aptly -ldflags='-extldflags=-static'
-          cp man/aptly.1 tmp/man/
-          cp completion.d/aptly tmp/completion/bash_completion.d/
-          cp completion.d/_aptly tmp/completion/zsh/vendor-completions/
-          gzip tmp/man/aptly.1
-          path="aptly_${{ matrix.goos }}_${{ matrix.goarch }}"
-          mkdir -p $path
-          mv tmp "$path"
-          zip -r "$path" . -i "$path/*"
+          echo ${{ steps.aptlyversion.outputs.VERSION }} > VERSION
+          make release GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: aptly_${{ matrix.goos }}_${{ matrix.goarch }}.zip
-          path: aptly_${{ matrix.goos }}_${{ matrix.goarch }}.zip
+          name: aptly_${{ steps.aptlyversion.outputs.VERSION }}_${{ matrix.goos }}_${{ matrix.goarch }}.zip
+          path: build/aptly_${{ steps.aptlyversion.outputs.VERSION }}_${{ matrix.goos }}_${{ matrix.goarch }}.zip
 
   gh-release:
     name: "Github Release: ${{ github.ref_name }}"
